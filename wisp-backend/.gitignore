@@ -1,0 +1,32 @@
+# deps
+node_modules/
+
+# build
+dist/
+build/
+
+# env / secrets
+.env
+.env.local
+
+# banco local
+prisma/*.db
+prisma/*.db-journal
+
+# client gerado do Prisma (recriado por `prisma generate`, ver postinstall)
+src/generated/
+
+# mídia gerada (roteiros, imagens, áudios, vídeos por job)
+storage/
+
+# remotion
+remotion/out/
+
+# testes / logs
+coverage/
+*.log
+
+# editor
+.vscode/
+.idea/
+.DS_Store

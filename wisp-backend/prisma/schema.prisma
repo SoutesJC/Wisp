@@ -1,0 +1,63 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// Estados do job — ver plano técnico, seção 3.1
+enum JobStatus {
+  gerando_roteiro
+  aguardando_revisao_roteiro
+  gerando_midia
+  aguardando_revisao
+  renderizando
+  concluido
+  falhou
+}
+
+// Modos de entrada — ver plano técnico, seção 1
+enum InputMode {
+  so_assunto
+  assunto_mais_ganchos
+  roteiro_completo
+}
+
+model Job {
+  id              String    @id @default(cuid())
+  status          JobStatus @default(gerando_roteiro)
+  inputMode       InputMode @map("input_mode")
+  idioma          String    @default("pt-BR")
+  assuntoOriginal String?   @map("assunto_original")
+  roteiroJson     String?   @map("roteiro_json") // schema Roteiro serializado (ver src/common/roteiro.types.ts)
+  custoAcumulado  Float     @default(0) @map("custo_acumulado")
+  storagePath     String?   @map("storage_path")
+  videoPath       String?   @map("video_path")
+  erro            String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  itens ItemGerado[]
+
+  @@map("jobs")
+}
+
+// Cada item individual gerado (imagem, áudio) — permite regenerar um item
+// sem perder o resto, e somar custoAcumulado por chamada. Ver seção 3.1.
+model ItemGerado {
+  id         String   @id @default(cuid())
+  jobId      String   @map("job_id")
+  job        Job      @relation(fields: [jobId], references: [id])
+  beatId     String   @map("beat_id") // ex: "e1", "g1", "g2", "reviravolta"
+  tipo       String // "imagem" | "audio_narrador" | "audio_wisp"
+  filePath   String   @map("file_path")
+  provider   String
+  custoUsd   Float    @map("custo_usd")
+  tentativas Int      @default(1) // conta regenerações
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("itens_gerados")
+}
