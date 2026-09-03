@@ -20,8 +20,11 @@ import {
 import { GerarRoteiroDto } from './dto/gerar-roteiro.dto';
 
 // Modelo fixado por versão específica (não alias) — seção 4.1 do plano.
-// Reconferir docs.claude.com se for trocar; não assumir que continua atual.
-const MODEL = 'claude-sonnet-5';
+// Configurável porque o formato do nome muda por gateway: Anthropic direta
+// usa o nome puro ("claude-sonnet-5"), OpenRouter exige prefixo de provedor
+// ("anthropic/claude-sonnet-5"). Reconferir docs.claude.com/openrouter.ai/docs
+// se for trocar; não assumir que continua atual.
+const MODEL_PADRAO = 'claude-sonnet-5';
 const MAX_TOKENS = 2048;
 const MAX_TENTATIVAS = 2;
 
@@ -29,13 +32,33 @@ const MAX_TENTATIVAS = 2;
 export class RoteiroService {
   private readonly logger = new Logger(RoteiroService.name);
   private readonly client: Anthropic;
+  private readonly model: string;
 
   constructor(
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
   ) {
+    this.model = this.config.get<string>('ANTHROPIC_MODEL') || MODEL_PADRAO;
+
+    // ANTHROPIC_BASE_URL vazio = Anthropic direta (padrão): autentica com
+    // ANTHROPIC_API_KEY via header x-api-key.
+    //
+    // Setado (ex: gateway tipo OpenRouter, endpoint /v1/messages compatível
+    // com a Anthropic): esses gateways autenticam com Bearer token, não
+    // x-api-key — por isso authToken aqui, não apiKey. Confirmado direto no
+    // client.d.ts instalado (@anthropic-ai/sdk expõe os dois, authToken usa
+    // Authorization: Bearer). Usar ANTHROPIC_AUTH_TOKEN nesse caso, deixando
+    // ANTHROPIC_API_KEY em branco pra não mandar os dois headers.
+    //
+    // tool_use/tool_choice passam intactos nesse modo (documentado pelo
+    // OpenRouter). Não testado neste ambiente por falta de chave.
+    const authToken = this.config.get<string>('ANTHROPIC_AUTH_TOKEN');
     this.client = new Anthropic({
-      apiKey: this.config.get<string>('ANTHROPIC_API_KEY'),
+      apiKey: authToken
+        ? undefined
+        : this.config.get<string>('ANTHROPIC_API_KEY'),
+      authToken: authToken || undefined,
+      baseURL: this.config.get<string>('ANTHROPIC_BASE_URL') || undefined,
     });
   }
 
@@ -103,7 +126,7 @@ export class RoteiroService {
     // tool_use com tool_choice forçado — não o beta output_format. Ver
     // comentário no topo de roteiro.schema.ts pro raciocínio completo.
     const response = await this.client.messages.create({
-      model: MODEL,
+      model: this.model,
       max_tokens: MAX_TOKENS,
       system: buildSystemPrompt(dto.idioma),
       messages: [{ role: 'user', content: userPrompt }],

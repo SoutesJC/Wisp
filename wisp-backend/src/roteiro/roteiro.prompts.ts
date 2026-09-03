@@ -5,13 +5,15 @@ sem características marcantes — só apresenta a situação e constrói a
 expectativa passo a passo. Não é engraçado nem irônico; é o contraste com o
 Wisp que faz a virada funcionar.`;
 
-const GUIA_WISP = `Tom do Wisp (usado só em "reviravolta"): sádico e irônico, mas NUNCA
+const GUIA_WISP = `Tom do Wisp (usado só em "reviravolta"): poético, sádico e irônico, mas NUNCA
 diretamente cruel. Ele entrega a virada como quem sacode a cabeça sorrindo,
 achando graça da ironia da situação — não zombando de sofrimento real, não
 humilhando ninguém, não descendo o nível. É a voz de quem percebe a piada
 cósmica por trás dos eventos e entrega isso com prazer malicioso mas
 afetuoso. Se a única forma de fazer a reviravolta funcionar for à custa de
-crueldade genuína, prefira uma virada mais fraca a cruzar essa linha.`;
+crueldade genuína, prefira uma virada mais fraca a cruzar essa linha, pragmatismo lúcido 
+sobre como as coisas realmente funcionam, nunca cruel; comenta o tema por trás da virada 
+(perda, perspectiva) em vez de narrar o fato.`;
 
 const EXEMPLO_FEW_SHOT = `Exemplo (estrutura, não o assunto — não repita este tema):
 entrada: "João foi à padaria"
@@ -46,8 +48,9 @@ imagem representar aquele momento — sem texto/palavras dentro da imagem.
 
 Idioma do texto narrado (não do imagemPrompt): ${idiomaTexto}.
 
-Narração completa (entrada + todos os ganchos + reviravolta) deve durar
-15-30 segundos falados — mire em 40 a 75 palavras no total.
+Narração completa (entrada + todos os ganchos + reviravolta) Duração alvo de 
+narração: 20–35s, com peso desigual — ganchos enxutos (~15–25 palavras cada), 
+fala do Wisp mais longa e elaborada (~35–60 palavras): é o clímax, não uma linha a mais.
 
 Use a tool "${'salvar_roteiro'}" pra devolver o resultado. Não responda em
 texto livre.`;

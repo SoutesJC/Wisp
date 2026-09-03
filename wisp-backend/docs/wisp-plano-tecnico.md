@@ -2,7 +2,19 @@
 
 > Pipeline (majoritariamente automatizado, com pausas de revisão) que gera um vídeo curto vertical (formato Reels) por dia a partir de um assunto/frase: roteiro estruturado → narração em duas vozes + imagens geradas por IA → renderização com efeitos de movimento, legendas e o bumper do Wisp. Ritmo alvo: 1 vídeo/dia, priorizando qualidade sobre volume — não é uma operação de produção em massa, então custo raramente é o critério decisivo entre opções.
 >
-> Última atualização: 21 de agosto de 2026. Preços de API verificados em 19/08/2026 — sempre reconferir antes de comprometer orçamento, esse mercado muda rápido.
+> Última atualização: 27 de agosto de 2026.
+
+---
+
+## Estado atual
+
+| Fase | Status |
+|---|---|
+| 0 — Setup | ✅ concluída, validada de ponta a ponta na máquina real |
+| 1 — Roteiro | ✅ código completo, testes unitários da lógica de validação passando; falta testar a chamada real ao Claude com API key |
+| 2 a 6 | não iniciadas |
+
+Ambiente: Node/TS + NestJS, Prisma 7.10.0 (versão fixada, sem `^`, no `package.json`), BullMQ, SQLite. Histórico completo de decisões e correções: `git log` (9 commits, um por mudança — nada foi reescrito do zero). Detalhes de setup e troubleshooting: `README.md`.
 
 ---
 
@@ -72,7 +84,7 @@ Dois personagens que não interagem entre si: o **Narrador** apresenta a histór
 | Tom | voz normal, sem característica chamativa | sádico, irônico, nunca cruel |
 | Provedor | ElevenLabs | ElevenLabs |
 
-**Por que ElevenLabs pras duas vozes** (revisando a escolha original, que era Amazon Polly por custo/timestamp): o Wisp precisa de atuação real — controle de prosódia é o ponto forte do ElevenLabs, e isso importa mais que economizar centavos numa operação de 1 vídeo/dia. Bônus: como o conteúdo é bilíngue (PT-BR/EN), o ElevenLabs mantém a mesma identidade de voz nos dois idiomas, então cada personagem soa como "a mesma pessoa" em qualquer idioma — essencial pra uma voz de marca.
+**Por que ElevenLabs pras duas vozes**: o Wisp precisa de atuação real — controle de prosódia é o ponto forte do ElevenLabs, e isso importa mais que economizar centavos numa operação de 1 vídeo/dia. Bônus: como o conteúdo é bilíngue (PT-BR/EN), o ElevenLabs mantém a mesma identidade de voz nos dois idiomas.
 
 Regra importante: o `voice_id` de cada personagem é **fixo para sempre**, nunca varia entre vídeos — diferente das imagens da história, onde alguma variação é tolerável.
 
@@ -84,20 +96,20 @@ O Narrador é só voz. O Wisp tem forma visual — um efeito recorrente, **reuti
 
 **Conceito**: fumaça cobre a tela → olhos e boca aparecem em meio à fumaça enquanto o Wisp fala → depois da fala, a fumaça se dissipa lentamente.
 
-**Direção visual definida**: sorriso arredondado e simétrico, sem dentes, brilho âmbar pálido — não vermelho. Uma primeira referência gerada (fumaça escura, olhos/boca vermelho-sangue, dentes serrilhados) foi descartada por ler como "maligno" — o Wisp deve ler como travesso/sarcástico, nunca cruel, o que pede formas arredondadas em vez de pontudas e fuga do vermelho (cor universal de perigo/demônio). Coincidência favorável: "Wisp" remete a *will-o'-the-wisp*, a luz fantasma do folclore que engana viajantes por brincadeira, sempre descrita com luz pálida azulada/esverdeada — nunca vermelha. O esboço aprovado é só referência de direção; o asset final merece mais capricho (ilustração própria ou geração cuidadosa por IA com esse briefing exato), já que é permanente.
+**Direção visual definida**: sorriso arredondado e simétrico, sem dentes, brilho âmbar pálido — não vermelho (referência "maligna" descartada por fugir do tom sarcástico-mas-não-cruel do personagem; "Wisp" remete a *will-o'-the-wisp*, luz fantasma pálida do folclore, nunca vermelha). O esboço aprovado é só referência de direção — o asset final merece mais capricho, já que é permanente.
 
-**Por que a animação não pode ser um único vídeo gerado por IA**: a duração da fala do Wisp muda todo dia (a reviravolta não tem tamanho fixo). Um clipe de vídeo gerado por IA tem duração fixa e nunca bateria exatamente com o áudio do dia.
+**Por que a animação não pode ser um único vídeo gerado por IA**: a duração da fala do Wisp muda todo dia. Um clipe de vídeo gerado por IA tem duração fixa e nunca bateria exatamente com o áudio do dia.
 
-**Abordagem recomendada — separar textura de controle de tempo**:
-- Fumaça e rosto (olhos + boca) são **assets fixos**, feitos uma vez. Fumaça: clipe de banco de vídeo (fundo preto, pronto pra blend mode) ou gerado por IA uma única vez — vale investir mais aqui, é permanente. Olhos/boca: asset separado (PNG/SVG com transparência), não gerado dentro do vídeo de fumaça — mais fácil de ajustar a expressão e de compor com timing preciso.
+**Abordagem — separar textura de controle de tempo**:
+- Fumaça e rosto (olhos + boca) são **assets fixos**, feitos uma vez (fumaça: banco de vídeo ou IA, gerado uma única vez; olhos/boca: PNG/SVG separado, não embutido no vídeo de fumaça).
 - Composição e tempo são feitos em código, no Remotion, que já lê a duração do áudio pra sincronizar legendas de qualquer forma.
 
 **Estrutura em 3 fases (composição Remotion)**:
 1. **Cobrir** (~1–1.5s fixo): fumaça entra, cobrindo a tela.
-2. **Revelar + segurar** (**duração variável** = duração do áudio do Wisp menos as fases 1 e 3): olhos e boca aparecem por cima da fumaça (fade-in), fumaça continua em loop curto e perfeito por trás — calculando frames a partir da duração real do áudio. ⚠️ Checar a API atual do Remotion pra isso na hora de implementar (Fase 3.5): `getAudioDurationInSeconds()` já está marcada como deprecated a favor de `getMediaMetadata()`, e a forma de fazer loop mudou algumas vezes — não fixar num nome de função por essas notas, conferir a documentação corrente primeiro.
-3. **Dissipar** (~1–1.5s fixo): olhos/boca somem, fumaça se abre (pode ser o clipe da fase 1 em reverso).
+2. **Revelar + segurar** (**duração variável** = duração do áudio do Wisp menos as fases 1 e 3): olhos e boca aparecem por cima da fumaça, fumaça em loop curto por trás. ⚠️ Conferir a API atual do Remotion na hora de implementar (Fase 3.5) — `getAudioDurationInSeconds()` já está deprecated a favor de `getMediaMetadata()`, não fixar num nome de função por essas notas.
+3. **Dissipar** (~1–1.5s fixo): olhos/boca somem, fumaça se abre.
 
-Esse bumper é autocontido — não depende do resto do pipeline pronto. Dá pra prototipar em paralelo às Fases 1–3 (seção 6).
+Esse bumper é autocontido — dá pra prototipar em paralelo às Fases 1–3.
 
 ---
 
@@ -153,45 +165,43 @@ sequenceDiagram
 
 ### 3.1 Revisão manual (duas pausas)
 
-Duas pausas, em pontos diferentes do processo — o pipeline não segue sozinho até o fim em nenhuma delas.
-
-**Pausa 1 — só texto** (só no modo 1, "só o assunto"): logo depois que o roteiro é gerado, antes de gastar com imagens. Ler e ajustar o roteiro custa segundos e é de graça; gerar 5 imagens de uma história que você ia querer mudar mesmo assim é desperdício.
+**Pausa 1 — só texto** (só no modo 1): logo depois que o roteiro é gerado, antes de gastar com imagens.
 
 **Pausa 2 — revisão completa** (sempre): depois que roteiro, imagens e áudios estão salvos no storage, antes do render.
 
-**Estados do job** (campo `status` no Prisma): `gerando_roteiro` → [`aguardando_revisao_roteiro` se modo 1] → `gerando_midia` → `aguardando_revisao` → `renderizando` → `concluido` (+ `falhou`).
+**Estados do job** (campo `status` no Prisma, `prisma/schema.prisma`): `gerando_roteiro` → [`aguardando_revisao_roteiro` se modo 1] → `gerando_midia` → `aguardando_revisao` → `renderizando` → `concluido` (+ `falhou`).
 
 **Mecanismo** (via CLI/endpoints simples, sem UI dedicada por enquanto):
-- Os itens já estão em `storage/<job_id>/` (roteiro.json, imagens, áudios) — dá pra abrir direto, sem precisar de nada especial.
-- `regenerar item`: reroda a geração de um item específico (imagem, áudio, ou texto de um gancho), com o mesmo prompt ou um prompt editado, sobrescrevendo o arquivo. Passa pela mesma verificação de sempre.
-- `aprovar`: avança o status (de `aguardando_revisao_roteiro` pra `gerando_midia`, ou de `aguardando_revisao` pra `renderizando`).
-- Troca manual do arquivo também funciona — o render só lê o que estiver na pasta, não se importa com a origem.
-- Se o texto de um gancho/reviravolta for editado em qualquer uma das pausas, reaplicar a verificação de estrutura (semente/resolve) antes de aprovar.
+- Os itens já estão em `storage/<job_id>/` — dá pra abrir direto.
+- `regenerar item`: reroda a geração de um item específico, com o mesmo prompt ou um prompt editado, sobrescrevendo o arquivo.
+- `aprovar`: avança o status.
+- Troca manual do arquivo também funciona — o render só lê o que estiver na pasta.
+- Se o texto de um gancho/reviravolta for editado, reaplicar a verificação de estrutura antes de aprovar.
 
 ### Estrutura de backend (Node.js / TypeScript, NestJS)
 
 ```
 wisp-backend/
 ├── src/
-│   ├── roteiro/         # geração do roteiro estruturado (Claude API)
-│   ├── image-gen/       # interface ImageGenerator + implementações por provedor
-│   ├── tts/              # interface TextToSpeech + implementações por provedor (Narrador/Wisp)
-│   ├── render/            # composições Remotion + trigger de render (inclui bumper do Wisp)
+│   ├── roteiro/         # geração do roteiro estruturado (Claude API) — Fase 1 ✅
+│   ├── image-gen/       # interface ImageGenerator + implementações por provedor — Fase 3
+│   ├── tts/              # interface TextToSpeech + implementações (Narrador/Wisp) — Fase 2
+│   ├── render/            # composições Remotion + trigger de render — Fase 3.5/4
 │   ├── storage/            # abstração local disk / S3-compatible
-│   ├── pipeline/            # orquestrador: liga tudo, chamado pela fila
-│   ├── queue/                 # setup e processors do BullMQ
-│   └── common/                  # schema do roteiro, tipos compartilhados
-├── remotion/                       # composições/templates React do Remotion
-├── prisma/                          # schema do banco (tracking de jobs)
-└── .env
+│   ├── pipeline/            # orquestrador — Fase 5
+│   ├── queue/                 # processors do BullMQ — Fase 5
+│   └── common/                  # tipos compartilhados (Roteiro) + PrismaService
+├── remotion/                       # ainda vazio — Fase 3.5/4
+├── prisma/schema.prisma             # modelos Job e ItemGerado
+└── prisma.config.ts                   # config do Prisma 7 (fora da compilação do NestJS)
 ```
 
-**Princípio central**: cada generator (imagem, TTS) fica atrás de uma **interface comum** (`ImageGenerator.generate(prompt): Promise<ImageResult>`), com uma implementação concreta por provedor. Isso permite trocar de provedor por configuração, sem tocar no resto do pipeline.
+**Princípio central**: cada generator (imagem, TTS) fica atrás de uma **interface comum**, com uma implementação concreta por provedor — trocar de provedor não deve exigir mudar nada fora daquele módulo.
 
 - **Fila**: BullMQ (Redis) — controla concorrência, retries automáticos, tracking de progresso.
-- **Banco**: Prisma + SQLite no início (suficiente pra rastrear jobs/roteiros/custos); migrar pra Postgres se o volume justificar.
-- **Storage**: disco local para desenvolvimento/testes; migrar para armazenamento compatível com S3 (Cloudflare R2 é uma opção a avaliar por não cobrar taxa de saída de dados) quando for para produção.
-- **Render**: Remotion rodando como processo dentro do próprio backend (ou worker separado).
+- **Banco**: Prisma + SQLite no início; migrar pra Postgres se o volume justificar.
+- **Storage**: disco local para desenvolvimento; migrar para S3-compatible (Cloudflare R2 é uma opção) em produção.
+- **Render**: Remotion rodando dentro do próprio backend (ou worker separado).
 
 ---
 
@@ -205,50 +215,52 @@ wisp-backend/
 | **Claude Sonnet 5** ✅ | **$2 / $10** |
 | Claude Opus 5 | $5 / $25 |
 
-**Recomendação**: Sonnet 5, chamada **síncrona** (API normal, sem Batch API). A Batch API foi cogitada antes por causa do desconto de 50%, mas ela adiciona latência (processamento pode levar minutos a horas) — isso atrapalha o loop rápido de "gera → revisa → ajusta" que faz sentido pro ritmo de 1 vídeo/dia. Na escala do projeto, a diferença de custo entre síncrono e batch é centavos por mês — não compensa a espera.
+**Recomendação**: Sonnet 5, chamada síncrona (sem Batch API — a latência de minutos/horas atrapalha o loop rápido de revisão, e a economia é centavos por mês nesse volume). Geração via `tool_use` com `tool_choice` forçado (GA desde 2024) — não o beta `output_format`, que exige header próprio e não lista suporte a Sonnet 5.
+
+**Gateway alternativo**: `ANTHROPIC_BASE_URL`+`ANTHROPIC_AUTH_TOKEN`+`ANTHROPIC_MODEL` (`.env`) permitem trocar a Anthropic direta por um gateway como o OpenRouter, preservando `tool_use`/`tool_choice` sem tradução. Dois detalhes que erramos e corrigimos numa segunda checagem: gateways desse tipo autenticam com Bearer token (`ANTHROPIC_AUTH_TOKEN`, não `ANTHROPIC_API_KEY`, que usa `x-api-key`), e o nome do modelo no OpenRouter precisa do prefixo do provedor (`anthropic/claude-sonnet-5`, não só `claude-sonnet-5`). Não testado neste ambiente por falta de chave; conferir na conta do gateway se o modelo está disponível antes de assumir que funciona.
 
 Custo estimado: **~$0,008 por roteiro**.
 
 ### 4.2 Narração (TTS)
 
-**Recomendação**: **ElevenLabs** para as duas vozes (Narrador e Wisp) — ver raciocínio completo na seção 2.1. Prioriza controle de prosódia e consistência de identidade de voz entre PT-BR/EN sobre economia de custo, já que o volume (1 vídeo/dia) torna a diferença de preço irrelevante.
+**Recomendação**: **ElevenLabs** para as duas vozes — ver seção 2.1.
 
 | Provedor | Preço (por 1M caracteres) | Timestamp por palavra nativo | Observação |
 |---|---|---|---|
-| Google Cloud (Standard/WaveNet) | $4 | ❌ | mais barato, mas sem timestamp nativo |
-| Amazon Polly (Neural) | ~$16 (+~$16 se pedir timestamp — Speech Marks é cobrado à parte, dobra o custo efetivo) | ✅ | boa opção de custo/feature, mas sem o controle de prosódia que o Wisp pede |
+| Google Cloud (Standard/WaveNet) | $4 | ❌ | mais barato, sem timestamp nativo |
+| Amazon Polly (Neural) | ~$16 (+~$16 se pedir timestamp) | ✅ | bom custo/feature, sem o controle de prosódia do ElevenLabs |
 | Azure Speech (Neural) | $16–22 | parcial | |
 | OpenAI TTS | $15–30 | ❌ | |
-| **ElevenLabs (Multilingual v2/v3)** ✅ | **$100** | ✅ | melhor naturalidade e controle de prosódia; mesma identidade de voz em PT-BR e EN |
+| **ElevenLabs (Multilingual v2/v3)** ✅ | **$100** | ✅ | melhor naturalidade; mesma identidade de voz em PT-BR e EN |
 
-Custo estimado: **~$0,04 por vídeo** (2 chamadas — Narrador + Wisp — usando a camada Multilingual pela qualidade/consistência entre idiomas).
+Custo estimado: **~$0,04 por vídeo** (2 chamadas — Narrador + Wisp).
 
 ### 4.3 Geração de imagem
 
 | Provedor/modelo | Preço por imagem | Observação |
 |---|---|---|
-| GPT Image (Mini) | $0,005 | mais barato, qualidade/consistência não testada por nós ainda |
+| GPT Image (Mini) | $0,005 | mais barato, consistência não testada |
 | Google Imagen 4 (Fast) | $0,02 | bom custo-benefício |
 | Google Imagen 4 (Standard/Ultra) | $0,04 / $0,06 | |
-| **Gemini 3.1 Flash Image / Nano Banana 2 (Lite)** ✅ | **~$0,034** | citado especificamente por força em consistência de personagem/estilo |
-| Gemini 3.1 Flash Image / Nano Banana 2 (padrão) | ~$0,067 | mesma vantagem de consistência, maior resolução |
-| Flux 2 Pro | ~$0,055 | boa qualidade fotorrealista; **licença comercial paga separada da API** (checar termos) |
-| Ideogram 3.0 | $0,03–0,09 | especializado em texto legível dentro da imagem — não é nosso caso de uso |
-| Modelos open-weight via agregador (Replicate/FAL) | $0,002–0,02 | mais barato, mas exige mais engenharia de prompt pra manter consistência entre imagens |
+| **Nano Banana 2 (Lite)** ✅ | **~$0,034** | citado por força em consistência de personagem/estilo |
+| Nano Banana 2 (padrão) | ~$0,067 | mesma vantagem, maior resolução |
+| Flux 2 Pro | ~$0,055 | boa qualidade; licença comercial paga separada da API |
+| Ideogram 3.0 | $0,03–0,09 | especializado em texto dentro da imagem — não é nosso caso |
+| Open-weight via agregador | $0,002–0,02 | mais barato, mais engenharia de prompt pra manter consistência |
 
-**Recomendação**: começar com **Nano Banana 2 (Lite)** — é o único da lista com uma vantagem explícita documentada em consistência visual entre gerações, que é nosso maior risco técnico. Comparar lado a lado com Imagen 4 Fast em teste real antes de decidir.
+**Recomendação**: começar com **Nano Banana 2 (Lite)**, comparar com Imagen 4 Fast em teste real antes de decidir.
 
-Custo estimado: **~$0,10–0,34 por vídeo** (5 imagens) — de longe o maior componente de custo do pipeline, mesmo com o volume baixo.
+Custo estimado: **~$0,10–0,34 por vídeo** (5 imagens) — maior componente de custo do pipeline.
 
 ### 4.4 Renderização
 
-**Remotion**, licença **Free** — indivíduos e empresas com até 3 funcionários usam de graça, incluindo uso comercial e vídeos ilimitados. Roda self-hosted, sem custo adicional de "serviço de render".
+**Remotion**, licença **Free** (indivíduo/empresa ≤3 funcionários, uso comercial incluso, self-hosted).
 
 ---
 
 ## 5. Estimativa de custo total
 
-Com o ritmo real do projeto (1 vídeo/dia, ~30/mês), custo deixa de ser um critério decisivo entre opções técnicas — as diferenças entre provedores somam poucos dólares por mês. A tabela existe pra referência, não pra guiar a escolha.
+Com 1 vídeo/dia (~30/mês), custo não é critério decisivo entre opções — a tabela é referência, não guia de escolha.
 
 | Componente | Custo por vídeo |
 |---|---|
@@ -257,92 +269,55 @@ Com o ritmo real do projeto (1 vídeo/dia, ~30/mês), custo deixa de ser um crit
 | Imagens (5x, Nano Banana Lite) | ~$0,17 |
 | Render (Remotion) | $0 |
 | **Total/vídeo** | **~$0,22** |
-| **~30 vídeos/mês (ritmo do projeto)** | **~$6,60/mês** |
+| **~30 vídeos/mês** | **~$6,60/mês** |
 
 ---
 
 ## 6. Plano de fases
 
-### Fase 0 — Setup
-- Repositório Node/TS, estrutura de pastas acima, gerenciamento de `.env`, lint/CI básico.
-- **Saída**: projeto vazio rodando, sem lógica ainda.
+### Fase 0 — Setup ✅
+Repositório Node/TS, estrutura de pastas, `.env`, lint/CI básico. **Saída**: projeto rodando, sem lógica ainda.
 
-### Fase 1 — Roteiro ✅ implementada (falta testar com API key real)
-- Implementar geração do JSON estruturado via Claude API (Sonnet 5, síncrono), com few-shot examples guiando tom/estilo dos ganchos e um guia de estilo separado pra voz do Wisp na reviravolta.
-- Validar contra vários assuntos de teste, incluindo assuntos "difíceis" sem ironia óbvia.
-- Implementar a Pausa 1 (revisão de texto, modo 1).
-- **Saída**: dado um assunto em texto, o sistema devolve um JSON válido seguindo o schema da seção 1, de forma consistente, com pausa pra revisão antes de seguir.
+### Fase 1 — Roteiro ✅ (falta testar com API key real)
+Geração do JSON estruturado via Claude API, com guia de estilo separado pro Wisp. Pausa 1 implementada. **Saída**: dado um assunto, devolve um roteiro válido e pausa pra revisão.
 
-**Decisão técnica**: geração via `tool_use` com `tool_choice` forçado, não o
-recurso beta "structured outputs" (`output_format`) da Claude API. Motivo:
-verificado na implementação que esse beta exige um header específico
-(`anthropic-beta: structured-outputs-2025-11-13`) e a documentação lista
-suporte só pra Sonnet 4.5/Opus 4.1 — não pro Sonnet 5 que escolhemos.
-`tool_use` é GA desde 2024 e funciona em qualquer modelo atual; a troca é
-validar o schema com Zod depois de receber, em vez de o schema ser garantido
-pela própria API. Essa foi pesquisada *antes* de escrever o código, diferente
-das correções reativas da Fase 0 — o processo da seção de riscos abaixo
-sendo seguido de forma proativa dessa vez.
-
-**O que foi validado nesse ambiente** (sem API key real, sem acesso à
-`api.anthropic.com` com credenciais): a lógica de validação de estrutura
-(`validarRegrasNarrativas`) e a montagem de ids (`montarRoteiro`) têm testes
-unitários passando — essa é a lógica mais própria/arriscada, e não depende
-de API key nem do client Prisma gerado. O que resta pra confirmar só na sua
-máquina, com chave real: se o Claude de fato retorna um `tool_use` bem
-formado pros 3 modos de entrada, e se a qualidade dos ganchos/reviravolta
-está boa na prática (isso é subjetivo, não dá pra testar por script).
+Testes unitários cobrem a validação de estrutura (semente/resolve) e a montagem de ids — a lógica mais própria/arriscada do código. A chamada real à API do Claude ainda não foi exercitada com uma chave válida; isso só se confirma rodando de verdade.
 
 ### Fase 2 — TTS
-- Integrar ElevenLabs, com dois `voice_id` fixos (Narrador, Wisp).
-- Confirmar extração de timestamp por palavra pras duas vozes.
-- Testar qualidade e consistência de identidade em PT-BR e EN.
-- **Saída**: dado o roteiro, o sistema devolve dois áudios (Narrador, Wisp) + timestamps por palavra.
+Integrar ElevenLabs com dois `voice_id` fixos. Confirmar timestamp por palavra pras duas vozes. **Saída**: dado o roteiro, devolve dois áudios + timestamps.
 
 ### Fase 3 — Geração de imagem
-- Integrar Nano Banana 2 (ou alternativa), gerar as N+2 imagens de uma história.
-- Testar consistência visual entre imagens da mesma história.
-- **Saída**: dado o roteiro completo, o sistema devolve uma imagem por beat, visualmente consistentes entre si.
+Integrar Nano Banana 2 (ou alternativa), gerar as N+2 imagens. Testar consistência visual. **Saída**: uma imagem por beat, visualmente consistentes.
 
-### Fase 3.5 — Bumper do Wisp (pode ser feita em paralelo às Fases 1–3)
-- Produzir/gerar o asset de fumaça e o asset de olhos/boca (seção 2.2).
-- Montar a composição Remotion de 3 fases (cobrir/revelar+segurar/dissipar) com duração dinâmica baseada no áudio do Wisp.
-- **Saída**: componente Remotion reutilizável que recebe uma duração de áudio e devolve a animação do Wisp sincronizada.
+### Fase 3.5 — Bumper do Wisp (pode ser paralela às Fases 1–3)
+Assets de fumaça e olhos/boca (seção 2.2). Composição Remotion de 3 fases com duração dinâmica. **Saída**: componente reutilizável.
 
 ### Fase 4 — Renderização
-- Composição Remotion: imagens com efeito de movimento (pan/zoom estilo Ken Burns) sincronizadas com a narração via timestamps, + legenda estilizada + bumper do Wisp (Fase 3.5) no encerramento.
-- **Saída**: dado imagens + áudios + timestamps + bumper, o sistema renderiza um .mp4 1080x1920.
+Composição Remotion: imagens + movimento + legenda + bumper. **Saída**: .mp4 1080x1920.
 
 ### Fase 5 — Orquestração fim a fim
-- Ligar tudo via BullMQ: roteiro → (Pausa 1, se modo 1) → imagens (paralelo) → TTS (Narrador + Wisp) → storage → Pausa 2 → render.
-- Implementar os comandos da seção 3.1 (regenerar item, aprovar) e o rastreamento de status do job.
-- Tratamento de erro/retry em cada etapa.
-- **Saída**: dado um assunto (em qualquer um dos 3 modos de entrada), o pipeline gera e armazena tudo, pausa pra revisão nos pontos certos, e renderiza assim que aprovado.
+BullMQ ligando tudo: roteiro → (Pausa 1) → imagens → TTS → storage → Pausa 2 → render. Comandos de regenerar/aprovar. Tratamento de erro/retry. **Saída**: pipeline completo, um assunto vira vídeo, com pausas nos pontos certos.
 
 ### Fase 6 — Testes e refinamento
-- Rodar com temas variados, monitorar custo real vs. estimado, refinar prompts com base nos resultados.
-- Decidir se algum provedor precisa ser trocado com base em qualidade observada.
+Temas variados, custo real vs. estimado, ajuste de prompts e provedores conforme qualidade observada.
 
 ---
 
 ## 7. Riscos e questões em aberto
 
-- **Consistência visual** das imagens da história é o maior risco técnico — mitigar com prompt de estilo fixo por história e/ou escolha de provedor com boa consistência nativa (seção 4.3). O Wisp evita esse problema por não ser regenerado por IA a cada vídeo (seção 2.2).
-- **Automação via navegador (Playwright)**: só usar como *script* rodando no próprio backend, nunca como MCP ao vivo guiando cada geração — e só para uma ferramenta específica sem API cujo custo por assinatura compense a manutenção extra.
-- **Licenciamento**: Flux (Black Forest Labs) exige licença comercial separada da API para uso comercial — checar antes de adotar. Remotion é gratuito para o seu caso.
-- **Políticas de conteúdo sintético**: plataformas como Instagram vêm evoluindo regras sobre rotulagem de conteúdo gerado por IA — reconferir antes de publicar em escala.
-- **Publicação automática**: este plano cobre gerar o arquivo de vídeo pronto. Publicar automaticamente no Instagram exigiria integração separada com a Graph API da Meta, conta business e processo de aprovação do app.
-- **Regras de conteúdo contra desinformação**: segue sem definição (seção 1) — não bloqueia a Fase 1, mas precisa de decisão antes de publicar em escala.
-- **Bibliotecas específicas mudam rápido**: já apareceram 4 casos reais nesse projeto, em duas rodadas de verificação. Prisma 7 mudou onde a URL do banco é configurada e passou a exigir driver adapter; o `BullModule` do NestJS/BullMQ não aceita `{ url }` dentro de `connection` (precisa de uma instância do ioredis); o helper `env()` do `prisma.config.ts` lança erro se a variável não existir — o que quebrava `npm install` num clone novo, antes mesmo de existir um `.env` (resolvido usando `process.env` com fallback); e o generator `prisma-client-js` que a Fase 0 usava inicialmente já está descontinuado a partir do Prisma 7 (trocado pelo `prisma-client` novo, que por sua vez precisa de `moduleFormat = "cjs"` pra funcionar com o CommonJS do NestJS). Em todos os casos a sintaxe "padrão" conhecida de antemão estava desatualizada. Ao implementar cada fase (2, 3, 3.5, 4), vale pesquisar a versão atual da lib específica antes de codar contra ela, em vez de confiar só em conhecimento geral — principalmente em bibliotecas de infraestrutura (ORM, fila, render) que mudam configuração com mais frequência que a lógica de negócio em si.
-- **Prisma está mudando rápido até *dentro* da versão 7**: o tipo `PrismaConfig` (de `@prisma/config`) ganhou/perdeu o campo `datasource` entre patches — o mesmo `prisma.config.ts`, sem nenhuma mudança nossa, compilou certo numa reinstalação e deu erro de tipo (`datasource does not exist`) noutra, só pela versão resolvida ter mudado de 7.9.1 pra outra em poucos dias. Duas correções: (1) `prisma.config.ts` agora está excluído da compilação do NestJS em `tsconfig.build.json` — quem carrega esse arquivo é a CLI do Prisma, não o `nest build`/`nest start`, então ele não precisa (e não deveria) passar pelo `tsc` do projeto; (2) as versões do `prisma`/`@prisma/client`/`@prisma/adapter-better-sqlite3` no `package.json` foram fixadas sem `^` (exatas), pra reinstalações futuras não puxarem uma versão diferente da testada sem avisar. Se atualizar essas versões de propósito no futuro, atualizar as 3 juntas e testar de novo.
-- **Nem tudo aparece só pesquisando com antecedência**: o npm 12 passou a bloquear script de instalação de dependências não aprovadas (`better-sqlite3` incluso — crítico, é o binário nativo do SQLite) por padrão, uma mudança recente o suficiente que só apareceu rodando `npm install` de verdade, não numa checagem de código isolada. Resolvido com um campo `allowScripts` no `package.json`. Vale considerar rodar `npm install` num ambiente limpo (ou pedir pra rodar e colar o resultado) ao final de cada fase que adicionar dependência nova, não só revisar o código.
-- **Vulnerabilidade conhecida aceita por ora**: `npm audit` acusa alta severidade em `deepmerge-ts` (usado internamente pelo `@prisma/config` pra mesclar configuração) — é stack exhaustion em objetos recursivos, mas o `@prisma/config` só usa isso pra mesclar o nosso próprio `prisma.config.ts`, não input de usuário ou de rede. Risco prático baixo. O fix sugerido pelo npm (`audit fix --force`) rebaixaria o Prisma pra 6.12.0, desfazendo a migração pro Prisma 7 inteira — não vale a troca. Reavaliar quando o Prisma atualizar essa dependência internamente (patch não-breaking) ou na próxima migração de major version.
-- **Prisma 8 já tem release candidate (8.0.0-rc.10)**: não migrar agora — é pré-lançamento, e o 7.9.1 acabou de ser validado funcionando de ponta a ponta depois de 3 rodadas de correção. Tratar upgrade de major version como decisão deliberada e isolada quando (e se) virar estável, não como reação automática ao aviso do CLI.
+- **Consistência visual** das imagens da história é o maior risco técnico — mitigar com prompt de estilo fixo e/ou provedor com boa consistência nativa (seção 4.3). O Wisp evita esse problema por não ser regenerado a cada vídeo.
+- **Automação via navegador (Playwright)**: só como script no próprio backend, nunca como MCP ao vivo guiando cada geração.
+- **Licenciamento**: Flux exige licença comercial separada pra uso comercial. Remotion é gratuito pro nosso caso.
+- **Políticas de conteúdo sintético**: plataformas vêm evoluindo regras de rotulagem de IA — reconferir antes de publicar em escala.
+- **Publicação automática**: fora de escopo por ora — exigiria Graph API da Meta, conta business, aprovação de app.
+- **Regras contra desinformação**: sem definição ainda — não bloqueia a Fase 1, mas precisa de decisão antes de publicar em escala.
+- **Bibliotecas de infraestrutura mudam rápido**: Prisma e BullMQ especificamente já geraram várias correções de sintaxe/config desatualizada durante o desenvolvimento (histórico completo em `git log` e `README.md`, não repetido aqui). Lição prática pras próximas fases: pesquisar a versão atual da lib antes de codar contra ela, e testar `npm install` limpo ao fim de cada fase que adiciona dependência — não só revisar o código.
+- **Não migrar Prisma nem "corrigir" o audit agora**: há um release candidate do Prisma 8 e uma vulnerabilidade de baixo risco prático (`deepmerge-ts`, usado só pra mesclar config local) cujo fix automático rebaixaria o Prisma pra 6.x. Ambos ficam parados até serem decisões deliberadas, não reação a avisos do CLI.
 
 ---
 
 ## 8. Próximos passos imediatos
 
-1. Criar o repositório e a estrutura de pastas (Fase 0).
-2. Implementar o gerador de roteiro (Fase 1) e testar com 10–15 assuntos variados antes de seguir adiante.
-3. Em paralelo, quando houver tempo: prototipar o bumper do Wisp (Fase 3.5) — é autocontido e não bloqueia o resto.
+1. Testar a Fase 1 com uma `ANTHROPIC_API_KEY` real — confirmar que os 3 modos de entrada retornam roteiros válidos, e avaliar a qualidade subjetiva dos ganchos/reviravolta.
+2. A partir daí, seguir pra Fase 2 (TTS).
+3. Em paralelo, quando houver tempo: prototipar o bumper do Wisp (Fase 3.5) — autocontido, não bloqueia o resto.
